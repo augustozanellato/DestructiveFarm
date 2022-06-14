@@ -21,8 +21,10 @@ from enum import Enum
 from math import ceil
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
+from random_user_agent.user_agent import UserAgent
 
 
+user_agent_rotator = UserAgent()
 os_windows = (os.name == 'nt')
 
 
@@ -79,13 +81,13 @@ def parse_args():
     parser.add_argument('sploit',
                         help="Sploit executable (should take a victim's host as the first argument)")
     parser.add_argument('-u', '--server-url', metavar='URL',
-                        default='http://farm.kolambda.com:5000',
+                        default='http://farm.augustozanellato.pw:5000',
                         help='Server URL')
     parser.add_argument('-a', '--alias', metavar='ALIAS',
                         default=None,
                         help='Sploit alias')
     parser.add_argument('--token', metavar='TOKEN',
-                        help='Farm authorization token')
+                        help='Farm authorization token', default="BsmyF04YhB4l9LWd3adPGXif2sjfVOrH")
     parser.add_argument('--interpreter', metavar='COMMAND',
                         help='Explicitly specify sploit interpreter (use on Windows, which doesn\'t '
                              'understand shebangs)')
@@ -94,7 +96,7 @@ def parse_args():
                         help='Maximal number of concurrent sploit instances. '
                              'Too little value will make time limits for sploits smaller, '
                              'too big will eat all RAM on your computer')
-    parser.add_argument('--attack-period', metavar='N', type=float, default=120,
+    parser.add_argument('--attack-period', metavar='N', type=float, default=100,
                         help='Rerun the sploit on all teams each N seconds '
                              'Too little value will make time limits for sploits smaller, '
                              'too big will miss flags from some rounds')
@@ -426,6 +428,7 @@ def launch_sploit(args, team_name, team_addr, attack_no, flag_format):
         command = [args.interpreter] + command
     if team_addr is not None:
         command.append(team_addr)
+    command.append(user_agent_rotator.get_random_user_agent())
     need_close_fds = (not os_windows)
 
     if os_windows:

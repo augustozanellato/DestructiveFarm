@@ -1,0 +1,4 @@
+server/config.py
+client/
+docs/
+tests/

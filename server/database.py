@@ -11,7 +11,7 @@ from flask import g
 from server import app
 
 
-schema_path = os.path.join(os.path.dirname(__file__), 'schema.sql')
+schema_path = os.path.join(os.path.dirname(__file__), '..', 'schema.sql')
 
 if "FLAGS_DATABASE" in os.environ:
     db_filename = os.environ["FLAGS_DATABASE"]
