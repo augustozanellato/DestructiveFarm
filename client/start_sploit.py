@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import sys
+from typing import Iterable, NamedTuple
 
 assert sys.version_info >= (3, 4), 'Python < 3.4 is not supported'
 
@@ -59,6 +60,10 @@ class Style(Enum):
 
 BRIGHT_COLORS = [Style.FG_RED, Style.FG_GREEN, Style.FG_BLUE,
                  Style.FG_MAGENTA, Style.FG_CYAN]
+class Flag(NamedTuple):
+    flag: str
+    sploit: str
+    team: str
 
 
 def highlight(text, style=None):
@@ -81,7 +86,7 @@ def parse_args():
     parser.add_argument('sploit',
                         help="Sploit executable (should take a victim's host as the first argument)")
     parser.add_argument('-u', '--server-url', metavar='URL',
-                        default='http://farm.augustozanellato.pw:5000',
+                        default='http://ccinfra.augustozanellato.pw:5000',
                         help='Server URL')
     parser.add_argument('-a', '--alias', metavar='ALIAS',
                         default=None,
@@ -250,20 +255,12 @@ def get_config(args):
         return json.loads(conn.read().decode())
 
 
-def post_flags(args, flags):
-    if args.alias is not None:
-        sploit_name = args.alias
-    else:
-        sploit_name = os.path.basename(args.sploit)
-        
-    data = [{'flag': item['flag'], 'sploit': sploit_name, 'team': item['team']}
-            for item in flags]
-
+def post_flags(args, flags: Iterable[Flag]):
     req = Request(urljoin(args.server_url, '/api/post_flags'))
     req.add_header('Content-Type', 'application/json')
     if args.token is not None:
         req.add_header('X-Token', args.token)
-    with urlopen(req, data=json.dumps(data).encode(), timeout=SERVER_TIMEOUT) as conn:
+    with urlopen(req, data=json.dumps([item._asdict() for item in flags]).encode(), timeout=SERVER_TIMEOUT) as conn:
         if conn.status != 200:
             raise APIException(conn.read())
 
@@ -282,7 +279,6 @@ def once_in_a_period(period):
         if exit_event.is_set():
             break
 
-
 class FlagStorage:
     """
     Thread-safe storage comprised of a set and a post queue.
@@ -292,20 +288,20 @@ class FlagStorage:
     """
 
     def __init__(self):
-        self._flags_seen = set()
-        self._queue = []
+        self._flags_seen: set[str] = set()
+        self._queue: list[Flag] = []
         self._lock = threading.RLock()
 
-    def add(self, flags, team_name):
+    def add(self, flags: Iterable[str], team_name, sploit):
         with self._lock:
-            for item in flags:
-                if item not in self._flags_seen:
-                    self._flags_seen.add(item)
-                    self._queue.append({'flag': item, 'team': team_name})
+            for flag in flags:
+                if flag not in self._flags_seen:
+                    self._flags_seen.add(flag)
+                    self._queue.append(Flag(flag, sploit, team_name))
 
     def pick_flags(self):
         with self._lock:
-            return self._queue[:]
+            return self._queue
 
     def mark_as_sent(self, count):
         with self._lock:
@@ -368,9 +364,15 @@ def process_sploit_output(stream, args, team_name, flag_format, attack_no):
             line = line.decode(errors='replace')
             output_lines.append(line)
 
+            if line.startswith(">>") and ":" in line:
+                sploit_name = line.removeprefix(">>").split(":")[0]
+            elif args.alias is not None:
+                sploit_name = args.alias
+            else:
+                sploit_name = os.path.basename(args.sploit)
             line_flags = set(flag_format.findall(line))
             if line_flags:
-                flag_storage.add(line_flags, team_name)
+                flag_storage.add(line_flags, team_name, sploit_name)
                 instance_flags |= line_flags
 
         if attack_no <= args.verbose_attacks and not exit_event.is_set():
@@ -422,6 +424,7 @@ def launch_sploit(args, team_name, team_addr, attack_no, flag_format):
     # if the sploit's output is redirected to a pipe.
     env = os.environ.copy()
     env['PYTHONUNBUFFERED'] = '1'
+    env['PWNLIB_SILENT'] = '1'
 
     command = [os.path.abspath(args.sploit)]
     if args.interpreter is not None:

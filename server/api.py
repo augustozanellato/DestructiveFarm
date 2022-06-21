@@ -2,7 +2,7 @@ import time
 
 from flask import request, jsonify
 
-from server import app, auth, database, reloader
+from server import app, auth, database, reloader, stats
 from server.models import FlagStatus
 from server.spam import is_spam_flag
 
@@ -22,6 +22,11 @@ def post_flags():
     flags = [item for item in flags if not is_spam_flag(item['flag'])]
 
     cur_time = round(time.time())
+
+    with stats.pipeline() as pipe:
+        for flag in flags:
+            pipe.incr(f'df.flag_in.{flag["team"]}.{flag["sploit"]}')
+
     rows = [(item['flag'], item['sploit'], item['team'], cur_time, FlagStatus.QUEUED.name)
             for item in flags]
 

@@ -1,8 +1,10 @@
 import logging
 
 from flask import Flask
+from statsd import StatsClient
 
 
+stats = StatsClient(host='telegraf', port=8125)
 app = Flask(__name__)
 
 app.logger.setLevel(logging.DEBUG)
