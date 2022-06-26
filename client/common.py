@@ -15,6 +15,7 @@ session: requests.Session
 
 
 def reset_session():
+    global session
     session = requests.Session()
     if user_agent is not None:
         session.headers.update({
