@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
+from operator import ge
 import sys
 from typing import Iterable, NamedTuple
 
-assert sys.version_info >= (3, 4), 'Python < 3.4 is not supported'
+assert sys.version_info >= (3, 9), 'Python < 3.9 is not supported'
 
 import argparse
 import binascii
@@ -22,6 +23,7 @@ from enum import Enum
 from math import ceil
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
+import requests
 from random_user_agent.user_agent import UserAgent
 
 
@@ -151,14 +153,6 @@ def check_script_source(source, interpreter):
         errors.append(
             'Please use shebang (e.g. {}) as the first line of your script'.format(
                 highlight('#!/usr/bin/env python3', [Style.FG_GREEN])))
-    if re.search(r'flush[(=]', source) is None:
-        errors.append(
-            'Please print the newline and call {} each time after your sploit outputs flags. '
-            'In Python 3, you can use {}. '
-            'Otherwise, the flags may be lost (if the sploit process is killed) or '
-            'sent with a delay.'.format(
-                highlight('flush()', [Style.FG_RED]),
-                highlight('print(..., flush=True)', [Style.FG_GREEN])))
     return errors
 
 
@@ -365,7 +359,7 @@ def process_sploit_output(stream, args, team_name, flag_format, attack_no):
             output_lines.append(line)
 
             if line.startswith(">>") and ":" in line:
-                sploit_name = line.removeprefix(">>").split(":")[0]
+                sploit_name = line[2:].split(":")[0]
             elif args.alias is not None:
                 sploit_name = args.alias
             else:
@@ -385,6 +379,20 @@ def process_sploit_output(stream, args, team_name, flag_format, attack_no):
     except Exception as e:
         logging.error('Failed to process sploit output: {}'.format(repr(e)))
 
+def process_sploit_stderr(stream, team_name):
+    try:
+        output_lines = []
+        while True:
+            line = stream.readline()
+            if not line:
+                break
+            line = line.decode(errors='replace')
+            output_lines.append(line)
+
+        if not exit_event.is_set() and output_lines:
+            display_sploit_output(team_name, output_lines)
+    except Exception as e:
+        logging.error('Failed to process sploit stderr: {}'.format(repr(e)))
 
 class InstanceStorage:
     """
@@ -418,7 +426,7 @@ instance_storage = InstanceStorage()
 instance_lock = threading.RLock()
 
 
-def launch_sploit(args, team_name, team_addr, attack_no, flag_format):
+def launch_sploit(args, team_name, team_addr, attack_no, flag_format, flag_ids):
     # For sploits written in Python, this env variable forces the interpreter to flush
     # stdout and stderr after each newline. Note that this is not default behavior
     # if the sploit's output is redirected to a pipe.
@@ -432,6 +440,8 @@ def launch_sploit(args, team_name, team_addr, attack_no, flag_format):
     if team_addr is not None:
         command.append(team_addr)
     command.append(user_agent_rotator.get_random_user_agent())
+    if flag_ids:
+        command.append(json.dumps(flag_ids))
     need_close_fds = (not os_windows)
 
     if os_windows:
@@ -440,7 +450,7 @@ def launch_sploit(args, team_name, team_addr, attack_no, flag_format):
         # intercepted by us instead of our child processes.
         kernel32.SetConsoleCtrlHandler(win_ignore_ctrl_c, True)
     proc = subprocess.Popen(command,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             bufsize=1, close_fds=need_close_fds, env=env)
     if os_windows:
         kernel32.SetConsoleCtrlHandler(win_ignore_ctrl_c, False)
@@ -448,16 +458,18 @@ def launch_sploit(args, team_name, team_addr, attack_no, flag_format):
     threading.Thread(target=lambda: process_sploit_output(
         proc.stdout, args, team_name, flag_format, attack_no)).start()
 
+    threading.Thread(target=lambda: process_sploit_stderr(proc.stderr, team_name)).start()
+
     return proc, instance_storage.register_start(proc)
 
 
-def run_sploit(args, team_name, team_addr, attack_no, max_runtime, flag_format):
+def run_sploit(args, team_name, team_addr, attack_no, max_runtime, flag_format, flag_ids):
     try:
         with instance_lock:
             if exit_event.is_set():
                 return
 
-            proc, instance_id = launch_sploit(args, team_name, team_addr, attack_no, flag_format)
+            proc, instance_id = launch_sploit(args, team_name, team_addr, attack_no, flag_format, flag_ids)
     except Exception as e:
         if isinstance(e, FileNotFoundError):
             logging.error('Sploit file or the interpreter for it not found: {}'.format(repr(e)))
@@ -563,9 +575,9 @@ def main(args):
 
         max_runtime = args.attack_period / ceil(len(teams) / args.pool_size)
         show_time_limit_info(args, config, max_runtime, attack_no)
-
+        flag_ids = get_pivoted_flag_ids()
         for team_name, team_addr in teams.items():
-            pool.submit(run_sploit, args, team_name, team_addr, attack_no, max_runtime, flag_format)
+            pool.submit(run_sploit, args, team_name, team_addr, attack_no, max_runtime, flag_format, flag_ids[team_addr])
 
 
 def shutdown():
@@ -575,6 +587,16 @@ def shutdown():
     with instance_lock:
         for proc in instance_storage.instances.values():
             proc.kill()
+
+def get_pivoted_flag_ids() -> dict[str, dict[str, list[str]]]:
+    ids = requests.get("http://10.10.0.1:8081/flagIds").json()
+    pivoted: dict[str, dict[str, list[str]]] = {}
+    for service in ids:
+        for team in ids[service]:
+            if team not in pivoted:
+                pivoted[team] = {}
+            pivoted[team][service] = ids[service][team]
+    return pivoted
 
 
 if __name__ == '__main__':
