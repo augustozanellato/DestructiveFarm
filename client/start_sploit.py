@@ -78,7 +78,6 @@ def highlight(text, style=None):
 
 
 log_format = '%(asctime)s {} %(message)s'.format(highlight('%(levelname)s', [Style.FG_YELLOW]))
-logging.basicConfig(format=log_format, datefmt='%H:%M:%S', level=logging.DEBUG)
 
 
 def parse_args():
@@ -577,7 +576,7 @@ def main(args):
         show_time_limit_info(args, config, max_runtime, attack_no)
         flag_ids = get_pivoted_flag_ids()
         for team_name, team_addr in teams.items():
-            pool.submit(run_sploit, args, team_name, team_addr, attack_no, max_runtime, flag_format, flag_ids[team_addr])
+            pool.submit(run_sploit, args, team_name, team_addr, attack_no, max_runtime, flag_format, flag_ids.get(team_addr, {}))
 
 
 def shutdown():
@@ -600,6 +599,7 @@ def get_pivoted_flag_ids() -> dict[str, dict[str, list[str]]]:
 
 
 if __name__ == '__main__':
+    logging.basicConfig(format=log_format, datefmt='%H:%M:%S', level=logging.DEBUG)
     try:
         main(parse_args())
     except KeyboardInterrupt:

@@ -4,8 +4,16 @@ import requests
 from lxml import html
 from start_sploit import get_pivoted_flag_ids
 import json
+import os
+import string
+import random
 
-__default_exploit_name = sys.argv[0].removesuffix(".py")
+__RANDOM_ALPHABET = string.ascii_letters + string.digits
+
+def random_string(n):
+    return ''.join(random.choices(__RANDOM_ALPHABET, k=n))
+
+__default_exploit_name = os.path.basename(sys.argv[0]).removesuffix(".py")
 team_ip = sys.argv[1]
 __user_agent = None
 if len(sys.argv) < 3:
@@ -17,7 +25,7 @@ flag_ids: dict[str, list[str]]
 
 if len(sys.argv) < 4:
     print("No flag ids provided, asking gamesystem")
-    flag_ids = get_pivoted_flag_ids()[team_ip]
+    flag_ids = get_pivoted_flag_ids().get(team_ip, {})
 else:
     flag_ids = json.loads(sys.argv[3])
 
