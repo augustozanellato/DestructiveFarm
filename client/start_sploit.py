@@ -3,7 +3,7 @@
 from operator import ge
 import sys
 from typing import Iterable, NamedTuple
-
+from flagids import get_pivoted_flag_ids
 assert sys.version_info >= (3, 9), 'Python < 3.9 is not supported'
 
 import argparse
@@ -586,17 +586,6 @@ def shutdown():
     with instance_lock:
         for proc in instance_storage.instances.values():
             proc.kill()
-
-def get_pivoted_flag_ids() -> dict[str, dict[str, list[str]]]:
-    ids = requests.get("http://10.10.0.1:8081/flagIds").json()
-    pivoted: dict[str, dict[str, list[str]]] = {}
-    for service in ids:
-        for team in ids[service]:
-            if team not in pivoted:
-                pivoted[team] = {}
-            pivoted[team][service] = ids[service][team]
-    return pivoted
-
 
 if __name__ == '__main__':
     logging.basicConfig(format=log_format, datefmt='%H:%M:%S', level=logging.DEBUG)

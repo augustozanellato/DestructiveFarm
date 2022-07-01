@@ -2,7 +2,7 @@ import sys
 from typing import Iterable, Optional
 import requests
 from lxml import html
-from start_sploit import get_pivoted_flag_ids
+from flagids import get_pivoted_flag_ids
 import json
 import os
 import string
